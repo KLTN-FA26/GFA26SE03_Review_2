@@ -1,0 +1,23 @@
+# Everything the build does not need. Without this, `docker build` uploads the whole working
+# directory to the daemon as build context - including target/, .git/ and any local storage -
+# which is slow and can leak a .env into an image layer.
+
+target/
+.git/
+.gitignore
+.github/
+.idea/
+*.iml
+.vscode/
+.local-storage/
+docs/
+deploy/
+infra/
+*.md
+!README.md
+.env
+.env.*
+!.env.example
+docker-compose.yml
+Dockerfile
+.dockerignore

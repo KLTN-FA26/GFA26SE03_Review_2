@@ -1,0 +1,76 @@
+package com.stockflow.order.api;
+
+import com.stockflow.common.domain.Money;
+import com.stockflow.common.domain.Sku;
+
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Intent: turn a cart into an order.
+ *
+ * <p>Records with compact-constructor validation, so an instance that exists is structurally
+ * valid. The caller cannot hand the service a command with zero lines and discover the problem
+ * three layers down.</p>
+ */
+public record PlaceOrderCommand(
+        UUID requestId,
+        UUID customerId,
+        UUID shippingAddressId,
+        UUID billingAddressId,
+        boolean snapshotCustomer,
+        List<Line> lines,
+        PaymentTerm paymentTerm,
+        java.math.BigDecimal depositPercent,
+        BalancePolicy balancePolicy
+) {
+
+    /**
+     * Without a balance policy: a deposit order takes the customer's (G2-3).
+     */
+    public PlaceOrderCommand(UUID requestId, UUID customerId, UUID shippingAddressId, UUID billingAddressId,
+                             boolean snapshotCustomer, List<Line> lines, PaymentTerm paymentTerm,
+                             java.math.BigDecimal depositPercent) {
+        this(requestId, customerId, shippingAddressId, billingAddressId, snapshotCustomer, lines, paymentTerm,
+                depositPercent, null);
+    }
+
+    /** Compatibility constructor for trusted internal callers and existing integrations. */
+    public PlaceOrderCommand(UUID requestId, UUID customerId, List<Line> lines) {
+        this(requestId, customerId, null, null, false, lines, null, null, null);
+    }
+
+    /** Prepaid, the default terms (kltn-docs 15 §4.1). */
+    public PlaceOrderCommand(UUID requestId, UUID customerId, UUID shippingAddressId, UUID billingAddressId,
+                             boolean snapshotCustomer, List<Line> lines) {
+        this(requestId, customerId, shippingAddressId, billingAddressId, snapshotCustomer, lines, null, null, null);
+    }
+
+    public PlaceOrderCommand {
+        if (requestId == null) throw new IllegalArgumentException("requestId is required");
+        if (customerId == null) throw new IllegalArgumentException("customerId is required");
+        if (lines == null || lines.isEmpty()) {
+            throw new IllegalArgumentException("An order needs at least one line");
+        }
+        lines = List.copyOf(lines);
+    }
+
+    /**
+     * One line.
+     *
+     * @param designSnapshotId set only for print-on-demand items; identifies the frozen design the
+     *                         customer approved, so a later edit to the design cannot change what
+     *                         was ordered
+     */
+    public record Line(Sku sku, int quantity, Money unitPrice, UUID designSnapshotId) {
+
+        public Line {
+            if (sku == null) throw new IllegalArgumentException("sku is required");
+            if (quantity < 1) throw new IllegalArgumentException("quantity must be at least 1");
+            if (unitPrice == null) throw new IllegalArgumentException("unitPrice is required");
+            if (unitPrice.isNegative()) {
+                throw new IllegalArgumentException("unitPrice must not be negative");
+            }
+        }
+    }
+}

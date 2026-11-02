@@ -1,0 +1,458 @@
+# StockFlowCommerce — working notes for Claude Code
+
+FPT University capstone **FA26SE029**, group **GFA26SE03**, 5 members, supervisor Nguyễn Minh Sang.
+A warehouse, print-production and B2B sales platform for a Vietnamese business that prints cups
+and packaging to its wholesale customers' designs (decided 2026-10-06: B2B only).
+
+Read this before touching anything. It is short on purpose; it says what is not obvious from the
+code, and points at the code for the rest.
+
+---
+
+## 1. Read this first: what has and has not been verified
+
+**`mvn test` has never run against this code.** Not once. The environment it was written in had no
+access to Maven Central, so nothing was ever resolved, compiled by Maven, or executed by JUnit.
+
+What *was* done instead, and what it is worth:
+
+| Check | Covers | Does not cover |
+|---|---|---|
+| `javac` against a ~300-file hand-written stub classpath | every type resolves, every signature is real | anything the stubs got wrong |
+| `tools/verify.py` — **committed, run it** | package↔path, module boundaries, `allowedDependencies`, unused imports, `@Scheduled` without `@SchedulerLock`, non-public proxied methods, Flyway version collisions, entity↔migration, `@NamedInterface` | anything needing a running context |
+| standalone runtime assertions, run outside Maven | UUIDv7 monotonicity under 16 threads, data-scope arithmetic, cache key generation, validators, the API envelope | Spring wiring, JPA mapping, SQL |
+
+The runtime assertions were throwaway harnesses and are not in the repo; what survived them is
+`src/test/java/com/stockflow/common/BaseLayerRegressionTest.java`, which pins the same cases as
+proper JUnit and *will* run under Maven.
+
+So: **treat a green reading of this codebase as unproven.** The highest-value thing you can do is
+get `mvn test` to run and report what actually breaks. Expect the failures to cluster in Spring
+context startup and JPA mapping, because those are exactly what nothing above could reach.
+
+```bash
+python3 tools/verify.py                   # no Maven, no network, under a second
+mvn test                                  # everything
+mvn test -Dtest=ModularityTest            # module boundaries only — run after ANY package change
+mvn test -Dtest=ArchitectureTest          # 18 layering/convention rules
+mvn verify                                # tests + JaCoCo
+docker compose up -d                      # postgres, redis, minio, jaeger, mailpit
+docker compose --profile app up           # the above plus the application container
+```
+
+Integration tests need Docker (Testcontainers: Postgres + Redis).
+
+The Maven wrapper *scripts* are not committed; `.mvn/wrapper/maven-wrapper.properties` pins 3.9.9.
+Generate them with `mvn wrapper:wrapper -Dmaven=3.9.9 -DdistributionType=only-script` if you want
+`./mvnw`.
+
+---
+
+## 2. What is actually built
+
+**2 of 14 business modules are implemented end to end, 1 is partial, 11 are empty skeletons.** A
+skeleton is a `package-info.java` with `@ApplicationModule`, an `api/` package holding only its own
+`package-info.java`, and the five empty layer directories — 7 files, all of them `package-info`.
+They exist so the module map and the dependency declarations are real, and so adding a module is a
+copy rather than a decision.
+
+| Module | State |
+|---|---|
+| `inventory` | Implemented end to end. **This is the reference module — copy it.** |
+| `order` | Implemented end to end, demonstrates the collapsed saga |
+| `common`, `contracts` | Implemented: the shared base layer (~9,400 LOC) and the event records |
+| `notification` | **Partial** — `OrderNotificationListener` (listens to `OrderPlaced`, `PaymentFailed`, `ShipmentStatusChanged`) and `NotificationSender`. No api, no persistence. |
+| the other 11 | Skeleton only |
+
+The shared base layer in `common/` is finished and deliberately thorough — security, caching,
+idempotency, rate limiting, auditing, storage, locking, validation, i18n, the API envelope, the
+exception handler. **Do not rebuild any of it inside a module.** `README.md` has the table of what
+is there; `docs/adding-a-module.md` §3 has the "use this, not that" list.
+
+Migrations: the full target schema is on `develop`; `docs/business-design/db-design/schema.dbml` is
+generated from it. The legacy product, procurement and warehouse-location tables are gone (contracts
+C1–C4, `V20261011000300`–`0600`); their rows were carried to the new tables and archived whole in
+`platform.legacy_archive` by `V20261011000200`. `event_publication` stays unqualified in `public`
+because Spring Modulith owns it (`V20260901000400` explains why).
+
+---
+
+## 3. Architecture in one screen
+
+Modular monolith on Spring Boot 3.5 / Spring Modulith 1.4 / Java 21 / PostgreSQL 16.
+One database, **one schema per module**, cross-schema references are real foreign keys (ADR-0007,
+replacing ADR-0005's plain UUIDs), no cross-schema JOIN.
+
+```
+com.stockflow.inventory/
+├── package-info.java     @ApplicationModule(allowedDependencies = {"warehouse :: api"})
+├── api/                  @NamedInterface("api")  ← the ONLY package other modules may import
+│   InventoryService, ReserveStockCommand, ReserveStockResult, StockAvailability, StockReservation
+└── internal/             invisible to other modules
+    ├── controller/       REST controllers + request/response DTOs
+    ├── service/          application services, listeners, schedulers · transaction boundary
+    ├── repository/       Spring Data repositories, port adapters, entity⇄domain mappers
+    ├── entity/           JPA entities — the table mapping and nothing else
+    └── domain/           aggregates, value objects, repository PORTS · no Spring, no JPA
+```
+
+Three things to internalise:
+
+1. **`api` is a named interface, not a plain package.** Spring Modulith exposes a module's *base*
+   package by default and treats nested ones as internal, so `api/package-info.java` carries
+   `@NamedInterface("api")` — without it the package is private. This is why every dependency is
+   written `"inventory :: api"` and not `"inventory"`. A bare `"inventory"` points at the base
+   package, which holds only `package-info.java`.
+
+2. **What belongs in `api` is decided mechanically:** the service interface, plus exactly the types
+   appearing in its method signatures, plus what those drag in. Nothing else. `StockItem` is the
+   module's most important class and it is *not* in `api`, because it appears in no signature.
+   Handing another module an aggregate lets it call behaviour outside a transaction and outside the
+   invariants. `docs/adding-a-module.md` §1 works this through.
+
+3. **`javac` does not enforce any of this.** It is all one jar; every boundary is enforced by
+   `ModularityTest` (module boundaries, `allowedDependencies`, cycles) and `ArchitectureTest`
+   (layering inside a module, plus the base-layer traps). Those two tests are the architecture.
+   Never disable one to unblock a build.
+
+Cross-module communication is either a **direct call** on the `api` interface (synchronous, joins
+the caller's transaction) or an **event** from `contracts/` (asynchronous, after commit). Event
+records live in `contracts` rather than in the publisher so two modules listening to each other do
+not form a cycle.
+
+### Naming
+
+`docs/adding-a-module.md` §2 is the full convention. The short version: a class with a framework
+role carries that role as a suffix (`InventoryController`, `StockItemJpaEntity`,
+`OrderRepositoryAdapter`); a value carries none (`StockItem`, `Quantity`, `StockAvailability`) —
+no `...Dto`, no `...Model`. A `Command` and its `Result` share a stem. One word per concept across
+migration, domain, api and URL.
+
+### Language
+
+**All identifiers, executable code and javadoc are in English, without exception.** Vietnamese is
+correct and expected in exactly two places: `docs/business-design/**` (the business analysis, which
+the team and the supervisor read) and the `_vi` i18n bundles / demo seed data. Do not "fix" those
+into English, and do not let Vietnamese leak into code.
+
+Javadoc in this codebase explains **why**, not what. When you change behaviour, change the javadoc
+that justified the old behaviour — several defects in §5 were found precisely because a comment
+claimed something the code no longer did.
+
+---
+
+## 4. The flows, in code
+
+`docs/business-design/04c-all-flows.md` has all 25 business flows in Vietnamese — 18 `F-*` main
+flows, 3 `X-*` exception flows, 4 `P-*` platform flows — with the state machines in
+`03-state-machines.md` and the 50 rules in `05-business-rules.md`. Two are implemented in code; here
+is where they live.
+
+### Checkout — the flow the whole architecture exists to justify
+
+`OrderServiceImpl.placeOrder` (`order/internal/service/`), one `@Transactional` method:
+
+```
+1. findByRequestId  → already placed? return it. (domain-level idempotency)
+2. nextOrderNumber  → from a sequence row, own short transaction
+3. build OrderLines with DETERMINISTIC ids derived from (requestId, index)
+4. Order.draft(...)
+5. for each line:
+      inventory.reserve(ReserveStockCommand(deterministicRequestId(requestId, lineId), ...))   ← a SKU reservation
+      order.attachReservations(lineId, result.reservationIds())   ← ALL ids, not the first
+6. order.submit()
+7. repository.save(order)
+8. events.publishEventsOf(order)   → OrderPlaced
+```
+
+Step 5 is the point. `inventory.reserve` is a **plain Java call inside this transaction**. If the
+order fails to persist, the reservation rolls back with it — no saga, no compensating action, no
+reservation timeout. ADR-0003 describes the distributed version this replaced; ADR-0005 is the
+decision itself. The deterministic ids in steps 3 and 5 are what make a retry of the whole request
+converge on the same rows instead of creating a second order.
+
+`reservationIds()` returns **every** id. Since SCRUM-152 a checkout returns one SKU reservation per line;
+the release replaces it on the line with one allocation per bin and lot, and every one of those must be
+kept — returning only the first would strand the rest.
+
+### Reserve and allocate — `InventoryServiceImpl.reserve` / `allocate` (SCRUM-152)
+
+Checkout reserves **quantity of a SKU, on no location** (docs 01 "Reserved"); bins and lots are chosen
+when the order is released to a warehouse (docs 01 "Allocated", 04c F-FUL step 02).
+
+```
+reserve:
+0. replay check  ← the SKU reservation this request made (or, for an old request, its stock-item holds)
+1. SKU advisory lock (prepareReservation took it for the basket already)
+2. ATP = unheld AVAILABLE unexpired on_hand − live SKU reservations; SkuReservation.open refuses above it
+   (tg_stock_reservation_soft_atp_* re-checks a looser bound in the database)
+
+allocate (OrderReleaseService.release, or task creation for a never-released CONFIRMED order):
+1. SKU locks (sorted) → the order's SKU reservations FOR UPDATE
+2. plan: StockAllocator over projections of pickable, usable bins of THAT warehouse; FEFO, then real
+   received_at (BR-STK-006); expired stock never
+3. lock each stock row once, in id order (findByIdForUpdate refreshes) → StockItem.allocate
+4. SKU reservation → ALLOCATED; the order line swaps its id for the allocation ids
+```
+
+Allocations are `stock_reservation` rows with `allocated_from_id`; they never expire. A pick line
+consumes exactly one. `findByIdForUpdate` refreshes deliberately: returning the persistence-context
+copy would make the pessimistic lock decorative.
+
+### Payment failure → release
+
+`PaymentEventListener.on(PaymentFailed)` in `inventory/internal/service/`, annotated
+`@ApplicationModuleListener` (= `@TransactionalEventListener(AFTER_COMMIT)` + `@Async` +
+`@Transactional(REQUIRES_NEW)`). Asynchronous on purpose: a slow release must not delay payment, and
+a failed release must not roll back the payment. Idempotent by construction — releasing an already
+closed reservation is a no-op.
+
+Spring Modulith's **event publication registry** replaces the transactional outbox: an event that a
+listener failed to process stays in `event_publication` and is retried. That table is migration
+`V20260901000400`.
+
+### Expiry sweep
+
+`ReservationSweeper.releaseExpiredReservations`, every minute, `@SchedulerLock` so it runs on one
+instance only. Bounded batches.
+
+### Pick confirmation — in-process, through `inventory :: consumption`
+
+`PickListService.confirm` (`fulfillment/internal/service/`), one `@Transactional` method (SCRUM-267/275):
+
+```
+1. lockPick           ← SELECT … FOR UPDATE on fulfillment.pick. ALWAYS first: pick, then stock row,
+                        never the reverse (cancelling an order locks stock rows in its own transaction
+                        and touches the pick only later, in the OrderCancelled listener)
+2. scope + assignee   ← WarehouseScope.requireWarehouse(pick.warehouseId), then only the assignee
+3. PickList.confirm   ← domain: location, SKU or barcode, exact allocation (BR-04); same scan again = done
+4. PickConsumption.consumeForPick(reservationId, pickLineId, actor)
+                      ← inventory, same transaction: locks the stock row, hold → CONSUMED, on_hand falls,
+                        one stock_movement(PICK, PICK_LINE) row, StockDeducted published.
+                        Idempotent per pick line: the ledger row is looked up first, and
+                        uk_stock_movement_pick_line is the last line of defence
+```
+
+`PickConsumption` lives in `inventory/consumption/`, a second named interface next to `api`. Only
+`fulfillment` lists `"inventory :: consumption"` in its `allowedDependencies`
+(`InventoryConsumptionBoundaryTest` pins that): deducting stock is not something any module may do.
+The same interface books put-backs — goods picked for an order cancelled afterwards go back onto a bin
+of the same warehouse as AVAILABLE stock, one `stock_movement(PUT_BACK, PICK_LINE)` row per line
+(`POST /fulfillment/tasks/{id}/pick-lines/{lineId}/put-back`, docs 07 BR-05).
+
+`POST /api/v1/inventory/reservations/{reservationId}/consumption` still exists for operations (closing a
+hold by hand) and runs the same implementation, writing a `PICK` ledger row that names the order. Nothing
+in the repo calls it; picking never goes over HTTP. (The original design did — "fulfillment calls the
+consumption endpoint over HTTP" — and was replaced so the pick line and the deduction commit together.)
+
+### Cycle count — a thin document over the adjustment (SCRUM-146)
+
+The count lives in `inventory`: aggregate `CycleCount` (`PLANNED → IN_PROGRESS → COMPLETED`, `CANCELLED`)
+with `CountSlot` (a bin + SKU + lot, or one carton) and the pure `CountVariance` split in `internal/domain/`;
+planning in `CycleCountService`, counting and submission in `CycleCountCountingService`. Counting re-reads the
+book quantity, so nothing is frozen while people count. `CycleCountCountingService.submit` is one
+`@Transactional` method: count row `FOR UPDATE` → SKU advisory locks in sorted order → cartons `FOR UPDATE` (a carton line
+follows its carton to its current bin) → `COMPLETED` → `StockOperations.requestCountVariance` per differing
+line, which raises pending `COUNT_VARIANCE` adjustments through the SCRUM-145 four-eyes mechanism — a loose
+shortage split over the slot's rows, free units first then held ones, each FEFO (`CYCLE_COUNT_STALE` rolls
+the whole submission back), one adjustment per carton. Nothing posts here: review and posting are the
+adjustment's own `PENDING_APPROVAL → POSTED`, and a SHORT_PICK slot stays out of ATP until its line's
+adjustments are decided. A slot with a pending `COUNT_VARIANCE` adjustment is busy — for new counts and for
+short picks, which reuse the count holding it (`CycleCountRepositoryAdapter.BUSY`, one predicate for
+`claim` and `findHolding`).
+
+### Receiving into cartons (SCRUM-473)
+
+Cartons are labelled while a DRAFT receipt is counted: `GoodsReceiptServiceImpl.replaceLines` →
+`InventoryService.countReceivingPackages`, which reconciles the line's RECEIVING cartons through the pure
+`ReceivingPackagePlan` (new → LPN, listed → recount, missing → VOID). `receive` puts each carton's count in one
+INBOUND row inside it (carton → IN_STOCK, unopened) and only the remainder loose. QC moves and reclassifies
+cartons whole, a list of LPNs per call: `moveStockPackages` / `reclassifyStockPackages`. Lock order everywhere:
+**SKU advisory locks (sorted) → `stock_package FOR UPDATE` → stock rows by id**.
+
+A loose `move` / `reclassify` and a carton move may share one reference (a receipt line to QC, a QC part). The
+loose replay lookup is `StockMovementLog.findLooseByReference`, which ignores ledger lines naming a carton; a lookup
+that saw them would take the carton's line for the loose move's earlier attempt and silently skip it.
+`LpnSequence.reserve` is `REQUIRES_NEW`: one count labels several SKUs under their advisory locks, and a sequence
+row held until commit would deadlock two receipts on it. It draws a line's LPNs as one block, so the second
+connection that transaction needs is borrowed once per line, not once per carton. Gaps in LPNs are the accepted
+price.
+
+Looking cartons up is `StockPackageLookup` (`GET /inventory/stock-packages/{lpn}`, `/location-summary`, the paged
+list), one SQL statement per kind of fact: a carton and the list read the view `inventory.stock_package_balance`, a
+carton's contents and a location's summary read `inventory.stock_item`. There is deliberately no
+endpoint to mark a carton LOST or found: that writes stock off, so it is only an approved count's adjustment.
+
+### Putaway (SCRUM-92)
+
+The task aggregate (`PutawayTask`: one carton, or a loose remainder of a receipt line) lives in `warehouse` behind
+`warehouse :: api` (`PutawayTasks`, `WarehouseService.putawayCandidates`). Orchestration is in `inventory`:
+`PutawayTaskCreator` opens the tasks when goods are received (per carton, plus the loose remainder, once per receipt
+line); `PutawayService.confirm` (`PutawayController`) moves the goods in one `@Transactional` method. Candidates are
+only usable bins flagged `is_putaway_target`, ranked by the pure `PutawayRanker` over `BinOccupancyQuery`; the filter
+is bin-level, shelf tiers are SCRUM-91.
+
+```
+lock order: task row → bin advisory lock (putaway-bin:<code>) → SKU advisory lock → stock_package FOR UPDATE → stock rows by id
+```
+
+The bin lock exists because only putaway checks bin capacity, and occupancy is bin-wide across SKUs: it serialises
+putaways into one bin, not other moves. Confirmation is synchronous on purpose (a 200 means the goods are in the
+bin), not an event consumer. `StockOperationsServiceImpl.putAwayLoose` skips the reference-based replay: every partial
+confirmation of a task shares `(PUTAWAY_TASK, taskId)`, so a retry is made safe by `Idempotency-Key` and by `left`,
+computed from the ledger under the task lock. Goods already moved by hand into the chosen bin are put away where they
+stand (a `STATUS_CHANGE` ledger line from the bin to the bin, since a `MOVE` needs two places). Each task that becomes
+DONE publishes `PutawayCompleted`; procurement's `PutawayCompletedListener`, and `inspect` when it moves the receipt into
+`IN_PUTAWAY`, call `GoodsReceipt.closeIfPutAway` (DONE quantities per line). Both load the receipt `FOR UPDATE`
+(`GoodsReceiptRepository.findByIdForUpdate`), so a putaway that commits while the last QC decision runs is seen by
+whichever of the two comes second. Round A stores no assignee, warehouse or suggestion reasons (no migration; Tú owns
+the schema).
+
+### Picking by carton (SCRUM-473)
+
+`StockAllocator.plan` keeps FEFO/FIFO first and orders only the group where the need runs out: whole sealed cartons
+(largest first, while each fits), then opened cartons and loose units (smallest first), then a sealed carton broken
+last. A sealed carton another order holds part of counts as opened. The facts come from the same projection
+(`AvailabilityRow.stockPackageId`, `wholeCarton`), so every caller of `plan` - order release, short-pick reallocation,
+production holds, transfer orders - gets the order. `HoldView` carries the hold's `lpn` and `wholeCarton`; fulfillment
+copies them onto `pick_line` (`V20261028003000`, checked by `tg_pick_line_carton`), and `PickList.confirm` accepts only
+the LPN for such a line: the deduction is from that carton, and a SKU scan would let the picker take any carton of it.
+
+### Issuing blanks by carton (SCRUM-473)
+
+A blank hold in a carton - a production hold, or an order's released allocation - is issued to the print shop only on
+a scan of its LPN (`MaterialIssueService.requireScanned`), as picking does; an issue that sends no item scan (no
+`scannedCode`, a location scan or none) still goes through (the SCRUM-397 contract), and `PendingHold` shows the
+carton to bring. The blanks still
+enter the print shop loose, the carton opening or emptying. Finished goods are not put into cartons: G4-Q2 consumes them
+when the production order completes, so nothing is left in stock to pack.
+
+### Purchase orders by carton (SCRUM-473)
+
+A standard PO line may name `unitOfMeasure` + `unitQuantity` ("5 CARTON"); `ProcurementServiceImpl.sizeLines` turns it
+into base units before the supplier's MOQ / pack multiple are checked, and the line keeps a `PackingUnit` (written to
+`uom_conversion_id` / `unit_qty`). Price, totals and approval limits stay per base unit. Naming the base unit means base
+units; a draft revision that names no unit keeps the line's own, so a client that knows nothing of units cannot drop
+one. Receiving takes the ordered unit for cartons listed with none (`GoodsReceiptServiceImpl.cartonUnit`) - a default,
+never a rule.
+
+---
+
+## 5. Known traps — do not reintroduce these
+
+Review rounds during construction found and fixed a long list of defects, all of which compiled
+cleanly and most of which passed a single-request happy-path test. That history is not recorded in
+the repo, so take the list below as guidance rather than as an audit trail — but every item in it is
+verifiable against the code and most are pinned by `BaseLayerRegressionTest`. The pattern matters
+more than the list: in this stack, the dangerous failures are silent.
+
+**Spring proxying — the annotation is ignored, nothing warns**
+- A non-public `@Scheduled` / `@ApplicationModuleListener` method is not advised. `verify.py` and
+  `ArchitectureTest.proxiedMethodsArePublic` check this.
+- A controller handler that is not public may not get `@RequiresPermission` applied — an endpoint
+  with no authorisation at all.
+- Self-invocation bypasses the proxy entirely.
+- Package-private `@Transactional` works only under CGLIB. `IdempotencyTransactions` and
+  `AuditWriter` are package-private *classes* with *public* methods for exactly this reason.
+
+**Caching**
+- `CacheConfig` calls `transactionAware()`, so every cache is wrapped in
+  `TransactionAwareCacheDecorator` — which defers `put`, `evict` *and* `clear` to after commit.
+  Inside an after-commit callback you must use `evictIfPresent` / `invalidate`, the two methods that
+  pass through; `evict` would register a second synchronization the commit loop never runs, and the
+  eviction would vanish while the log claimed success.
+- `new GenericJackson2JsonRedisSerializer(mapper)` does **not** enable default typing. Without it,
+  the second call to any `@Cacheable` method throws `ClassCastException: LinkedHashMap`. The cache
+  uses a mapper copy with a restricted `PolymorphicTypeValidator`.
+- `CacheConfig` keeps `proxyBeanMethods` ON. With it off, `CachingConfigurer` produces two
+  `CacheManager` instances.
+
+**Security / data scope**
+- `Specs.eq` returns `all()` for a null value — right for an optional filter, catastrophic for a
+  scope. `OWN` scope with a null user id now throws instead of matching every row.
+- `@RequiresPermission` is `METHOD`-only. On a TYPE it compiles, passes startup validation and
+  enforces nothing, because the pointcut is `@annotation`, not `@within`.
+- The guard saves and restores the scope rather than clearing it, so a nested guarded call does not
+  wipe its caller's scope.
+- `stockflow.security.enabled=false` conditions the guard away, which means no scope is ever set and
+  every scoped query would 403. `UnsecuredDataScopeFilter` supplies a system scope in that profile;
+  `PermissiveSecurityConfig` does the same job one layer up at the filter chain. Turning security
+  "off" without both makes the application *stricter*, not looser.
+- `CurrentUserProvider.current()` must never throw. `RequestLoggingFilter` calls it from a
+  `finally` block, where an exception replaces the response the application was about to send and
+  escapes `@RestControllerAdvice` entirely; `AuditAspect` calls it around a business operation it
+  must not fail. A JWT whose `sub` is not a UUID, or whose `scope_level` is unrecognised, is an
+  ordinary token shape, not a reason to break the response.
+- **Permissions and scope are not in the token** (ADR-0008). They are resolved per request from
+  Redis (`RoleAuthorizationCache`, keyed by role + `app_role.version`) and carried on
+  `StockflowAuthenticationToken`. Never read a `permissions` or `scope_level` claim — a token issued
+  before the change still has them, and they are stale by design.
+- **Any write to `identity.role_permission` must advance `app_role.version` in the same
+  transaction** — the service does it with `advanceVersion`; a migration that changes seeded grants
+  must `UPDATE identity.app_role SET version = version + 1` for those roles, or holders keep the old
+  grants for up to an hour. Never `DEL` authorisation keys to "invalidate": moving the version is the
+  invalidation, and a delete reopens the race the version exists to close.
+
+**Persistence**
+- `BaseEntity.equals`/`hashCode` are final, so they read through `getId()`, never the `id` field —
+  on an uninitialised proxy the inherited field is null and an entity would not equal its own proxy.
+- `BaseEntity` implements `Persistable`. With an application-assigned id and a primitive
+  `@Version`, Spring Data's `isNew()` answers false for everything and `save()` always merges: a
+  SELECT before every INSERT, and a returned instance that is not the one passed in.
+- Hikari needs `auto-commit: false` alongside `provider_disables_autocommit: true`, or
+  `@Transactional` rollback becomes a no-op.
+
+**HTTP**
+- The idempotency filter stores only settled outcomes. `isStorable` excludes 408, 409, 423, 425,
+  429 and every 5xx, which release the claim instead — caching a "try again" response makes the
+  retry it asks for impossible for the full 24-hour window.
+- An `IN_PROGRESS` claim has a 5-minute lease (`CLAIM_TIMEOUT`), because the cleanup runs in a
+  `finally` that a killed JVM never reaches.
+- `GlobalExceptionHandler` lists framework exception types explicitly. Anything missing is swallowed
+  by the `Exception.class` catch-all and turns a 400/404/503 into a 500 with an ERROR stack trace.
+  Server-fault messages are never returned to the client — they carry filesystem paths and upstream
+  service names.
+- `CorrelationIdFilter` is at `HIGHEST_PRECEDENCE`, outside Spring Security's `-100`, or 401/403
+  bodies carry no correlation id.
+
+---
+
+## 6. Where to look
+
+| | |
+|---|---|
+| `README.md` | stack, running it, module map, what `common` provides, the two rules |
+| `docs/adding-a-module.md` | the checklist for a new module: shape, naming, step by step |
+| `docs/adr/0005-modular-monolith.md` | why this is not microservices; ADRs 0001–0003 are what it replaced |
+| `docs/business-design/04c-all-flows.md` | all 25 business flows (18 `F-*`, 3 `X-*`, 4 `P-*`) |
+| `docs/business-design/05-business-rules.md` | the 50 rules, each with its enforcement point |
+| `docs/business-design/06-open-questions.md` | what is deliberately undecided |
+| `docs/business-design/db-design/` | the migration plan (C1–C4 activated; only C0 left in `db/pending`), and `schema.dbml` generated from the migrated database by `tools/db/gen_dbml.py` |
+| `tools/db/` | `orphan_check.sql`, the adversarial schema checks `qa/run.sh`, the DBML generator |
+| `inventory/**` | the worked example. Every layer is implemented. |
+| `tools/verify.py` | the fast static pass; its module docstring lists all 15 checks |
+| `.claude/skills/java-design-principles/` | SOLID/DRY/KISS/reuse-first, with a live example in the tree for each — the judgment the fitness functions cannot check |
+| `.claude/skills/jpa-orm-review/` | N+1, lazy loading, fetch strategy, pagination, locking, transaction boundaries, and how to MEASURE query counts |
+
+## 7. House rules for changes
+
+- Run `ModularityTest` after any change to packages, `allowedDependencies` or `@NamedInterface`.
+  Nothing else in the build notices when a named-interface reference is wrong.
+- Never return a JPA entity from a controller, and never put one in `api`.
+- State every invariant twice: once in the aggregate, once as a `CHECK` constraint.
+- `EnumType.STRING` always. An ordinal enum breaks the day someone reorders the constants.
+- Primary keys are `Identifiers.newId()` (UUIDv7). A random UUID scatters inserts across the index.
+- If a fitness function is genuinely wrong, change it and write down why — in the class javadoc or a
+  new ADR. Deleting a rule to make a build pass is the one thing that is not allowed.
+- **Database schema is owned by one person (Tú).** Do not add files to `db/migration`; the full
+  schema is already there. Read `docs/business-design/db-design/README.md` (rules + flow) and the
+  plan's §8 (which tables are whose) before writing an entity. Contract steps in `db/pending` are
+  activated by the owner only, when the module's code has moved to the new tables.
+- A migration's version must be newer than the newest one on `develop` when it merges: Flyway does
+  not run out of order. A branch carrying older-numbered migrations renames them before merging.
+- Cross-module references are foreign keys (ADR-0007). Validate a reference in the service first
+  (404/409 with a real error code); tests use `support/DemoData` or `support/ReferenceRows`, never an
+  invented id for another module's row.
+- **Never `git commit` or `git push` without asking the repository owner first.** Editing the working
+  tree is fine; putting changes into history or onto the remote requires an explicit go-ahead. This
+  applies to any automated assistant working in this repo.
