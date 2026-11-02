@@ -1,0 +1,151 @@
+---
+title: StockFlowCommerce — System Architecture (deployment view)
+config:
+  layout: elk
+  look: classic
+  theme: base
+  themeVariables:
+    fontFamily: Arial
+    fontSize: 14px
+    primaryColor: '#FFFFFF'
+    primaryTextColor: '#1C2024'
+    primaryBorderColor: '#5A6C86'
+    lineColor: '#232F3D'
+    edgeLabelBackground: '#FFFFFF'
+    clusterBkg: '#FFFFFF'
+    clusterBorder: '#5A6C86'
+    titleColor: '#1C2024'
+  flowchart:
+    wrappingWidth: 420
+    nodeSpacing: 40
+    rankSpacing: 70
+  elk:
+    nodePlacementStrategy: NETWORK_SIMPLEX
+    orientFeedbackEdges: false
+---
+%% Line key: solid arrow = request · dashed arrow = its response · dotted thick arrow = asynchronous.
+%% Grey dashed box or line = optional or planned, not running on the dev VPS.
+%% A response is written caller <-.-> callee with its far arrowhead hidden by linkStyle (marker-end:none):
+%% the arrow points back at the caller, while the layout still reads every pair in the direction it starts.
+flowchart LR
+  subgraph CLI["Client devices"]
+    B2B["<b>Web browser</b><br/>B2B customers"]
+    OFFICE["<b>Web browser</b><br/>office staff"]
+  end
+
+  subgraph PHONE["Android / iOS device · StockFlow Mobile (Expo · React Native)"]
+    MOB_APP["<b>App · runs on the phone</b><br/>receiving · putaway · picking · packing · loads<br/>shipments · inventory · moves · transfers"]:::browser
+    MOB_DEV["<b>Device APIs</b><br/>camera: barcode / QR scan<br/>SecureStore: session token"]:::server
+  end
+
+  subgraph VERCEL["Vercel"]
+    subgraph STORE["B2B Storefront · Next.js 16 · customer portal"]
+      STORE_CLI["<b>Browser</b><br/>catalog · cart · checkout · orders<br/>chat · design studio"]:::browser
+      STORE_SRV["<b>Server · Vercel</b><br/>SSR pages · proxies /api/* to the API"]:::server
+    end
+    subgraph BO["Back-office web · Next.js 16 · staff portal"]
+      BO_CLI["<b>Browser</b><br/>products · inventory · warehouse map · receiving<br/>picking · shipping · purchasing · invoices · reports"]:::browser
+      BO_SRV["<b>Server · Vercel (BFF)</b><br/>session in an HttpOnly cookie<br/>proxies /api/backend/*"]:::server
+    end
+  end
+
+  subgraph VPS["VPS · Ubuntu · 2 vCPU / 4 GB RAM · Docker Compose"]
+    subgraph PUB["Public · 80/443"]
+      NGINX["<b>Nginx 1.27</b><br/>reverse proxy · TLS (Let's Encrypt)<br/>hosts: api · jaeger · logs"]
+    end
+    subgraph INT["Internal network · no public ports"]
+      subgraph APP["StockFlow API — modular monolith · Spring Boot 3.5 · Java 21 · Spring Modulith 1.4 · REST /api/v1"]
+        M_SALES["<b>Sales #amp; customers</b><br/>customer · catalog · product<br/>design · order · payment · chat"]:::module
+        M_OPS["<b>Operations</b><br/>inventory · warehouse<br/>procurement · production · fulfillment"]:::module
+        M_PLAT["<b>Platform</b><br/>identity (JWT issuer)<br/>notification · reporting"]:::module
+        M_AI["<b>AI assistant (planned)</b><br/>tool-calling agent<br/>RAG over business rules · SSE chat"]:::optional
+        M_SHARED["<b>Shared kernel</b><br/>common: security · cache · idempotency · audit · storage<br/>contracts: domain events"]:::server
+        M_BUS["<b>In-process event bus</b> · Spring Modulith<br/>events stay in PostgreSQL (outbox)<br/>until every listener has handled them"]:::module
+        M_NOTE["module boundaries enforced by<br/>Spring Modulith and ArchUnit tests"]:::note
+      end
+      subgraph DATA["Backing services"]
+        PG[("<b>PostgreSQL 16</b><br/>1 DB · schema per module")]
+        REDIS[("<b>Redis 7</b><br/>cache · rate limit · locks")]
+        CLAM["<b>ClamAV (optional)</b><br/>upload virus scan<br/>off on the dev VPS"]:::optional
+      end
+      subgraph OPS["Ops tools · team only"]
+        DOZZLE["<b>Dozzle</b><br/>container logs"]
+        JAEGER["<b>Jaeger</b><br/>tracing"]
+      end
+    end
+  end
+
+  subgraph EXT["Third-party services"]
+    CF["<b>Cloudflare</b><br/>DNS · proxy (team hosts)"]
+    PROV["<b>Provinces Open API</b><br/>VN administrative units"]
+    R2[("<b>Cloudflare R2</b><br/>object storage · S3 API")]
+    RESEND["<b>Resend</b><br/>transactional e-mail"]
+    LLM["<b>LLM API (planned)</b><br/>Claude · Gemini"]:::optional
+  end
+
+  %% requests and their responses
+  B2B -->|"HTTPS"| STORE_SRV
+  B2B <-.->|"HTML · JSON"| STORE_SRV
+  OFFICE -->|"HTTPS"| BO_SRV
+  OFFICE <-.->|"HTML · JSON"| BO_SRV
+  STORE_CLI -->|"API call (/api/*)"| STORE_SRV
+  STORE_CLI <-.->|"JSON"| STORE_SRV
+  BO_CLI -->|"API call (/api/backend/*)"| BO_SRV
+  BO_CLI <-.->|"JSON"| BO_SRV
+  STORE_SRV -->|"REST"| NGINX
+  STORE_SRV <-.->|"JSON"| NGINX
+  BO_SRV -->|"REST"| NGINX
+  BO_SRV <-.->|"JSON"| NGINX
+  MOB_APP -->|"REST"| NGINX
+  MOB_APP <-.->|"JSON"| NGINX
+  NGINX -->|"HTTP :8080"| APP
+  NGINX <-.->|"JSON"| APP
+  NGINX -->|"HTTP · basic auth"| OPS
+  NGINX <-.->|"web UI"| OPS
+  APP -->|"SQL (JDBC)"| PG
+  APP <-.->|"rows"| PG
+  APP -->|"GET / SET (RESP)"| REDIS
+  APP <-.->|"values"| REDIS
+  M_SHARED -->|"INSTREAM scan"| CLAM
+  M_SHARED <-.->|"OK / FOUND"| CLAM
+  APP -.->|"traces (OTLP)"| JAEGER
+  CLI -->|"DNS query"| CF
+  CLI <-.->|"IP address"| CF
+  VERCEL -->|"GET provinces / wards (from the browser)"| PROV
+  VERCEL <-.->|"JSON"| PROV
+  VERCEL -->|"GET presigned URL (from the browser)"| R2
+  VERCEL <-.->|"file"| R2
+  M_SHARED -->|"S3 API: put · get · copy · delete"| R2
+  M_SHARED <-.->|"file data · result"| R2
+  M_PLAT -->|"send e-mail (HTTPS)"| RESEND
+  M_PLAT <-.->|"message id"| RESEND
+  M_AI -->|"prompt + tools"| LLM
+  M_AI <-.->|"answer"| LLM
+  RESEND -.->|"delivery status webhook (HTTPS)"| NGINX
+
+  %% node styles
+  classDef module fill:#F3F8EE,stroke:#6DB33F,color:#1C2024
+  classDef server fill:#F5F6F7,stroke:#AAB7B8,color:#1C2024
+  classDef browser fill:#F2F7FD,stroke:#8FB3DE,color:#1C2024
+  classDef optional fill:#FFFFFF,stroke:#9AA5B1,stroke-dasharray:5 3,color:#5E6B7A
+  classDef note fill:#FFFFFF,stroke:#FFFFFF,color:#5E6B7A,font-style:italic
+  style CLI fill:#FFFFFF,stroke:#5A6C86,stroke-dasharray:5 4
+  style PHONE fill:#FFFFFF,stroke:#1C2024
+  style VERCEL fill:#FFFFFF,stroke:#1C2024
+  style STORE fill:#FFFFFF,stroke:#1C2024
+  style BO fill:#FFFFFF,stroke:#1C2024
+  style VPS fill:#FFFFFF,stroke:#7D8998,stroke-width:1.5px
+  style PUB fill:#F2F6E8,stroke:#7AA116
+  style INT fill:#E6F6F7,stroke:#00A4A6
+  style APP fill:#FFFFFF,stroke:#6DB33F,stroke-width:2px
+  style DATA fill:#FFFFFF,stroke:#5A6C86,stroke-dasharray:5 4
+  style OPS fill:#FFFFFF,stroke:#879196,stroke-dasharray:5 4
+  style EXT fill:#FFFFFF,stroke:#5A6C86,stroke-dasharray:5 4
+  style NGINX fill:#FFFFFF,stroke:#009639,stroke-width:1.5px
+
+  %% line styles, by the index of each link above
+  linkStyle 0,2,4,6,8,10,12,14,16,18,20,25,27,29,31,33 stroke:#232F3D,stroke-width:1.5px,color:#1C2024
+  linkStyle 1,3,5,7,9,11,13,15,17,19,21,26,28,30,32,34 stroke:#7B8794,stroke-width:1.2px,stroke-dasharray:5 4,color:#5E6B7A,marker-end:none
+  linkStyle 24,37 stroke:#232F3D,stroke-width:2px,stroke-dasharray:1 4,color:#1C2024
+  linkStyle 22,35 stroke:#9AA5B1,stroke-width:1.5px,color:#5E6B7A
+  linkStyle 23,36 stroke:#9AA5B1,stroke-width:1.2px,stroke-dasharray:5 4,color:#5E6B7A,marker-end:none
