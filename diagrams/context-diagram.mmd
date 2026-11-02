@@ -1,0 +1,52 @@
+---
+title: StockFlowCommerce — Context Diagram (Level 0)
+config:
+  layout: elk
+  elk:
+    nodePlacementStrategy: NETWORK_SIMPLEX
+  flowchart:
+    wrappingWidth: 280
+---
+flowchart LR
+    %% Hình tròn = hệ thống; khung chữ nhật = actor (người dùng và thực thể bên ngoài).
+    %% Mỗi actor nối với hệ thống bằng một đường hai chiều; nhãn chia "▶ vào hệ thống" và "◀ ra khỏi hệ thống".
+    classDef sys fill:#ffffff,stroke:#000000,stroke-width:3px,font-weight:bold,font-size:24px
+    classDef act fill:#ffffff,stroke:#000000,stroke-width:1.5px,font-weight:bold,font-size:16px
+    classDef ext fill:#ffffff,stroke:#000000,stroke-width:1.5px,font-weight:bold,font-size:16px
+
+    EMAIL["Email Service"]:::ext
+    CU["B2B Customer"]:::act
+    SS["Sales Staff"]:::act
+    OC["Order Coordinator"]:::act
+    EA["E-commerce Admin"]:::act
+    AC["Accountant"]:::act
+    BANK["Bank"]:::ext
+    QC["QC Staff"]:::act
+    SYS(("StockFlowCommerce")):::sys
+    PD["Production Staff"]:::act
+    SUP["Supplier"]:::ext
+    PS["Procurement Staff"]:::act
+    SA["System Admin"]:::act
+    IP["Inventory Planner"]:::act
+    WM["Warehouse Manager"]:::act
+    WS["Warehouse Staff"]:::act
+    SUB["Subcontractor"]:::ext
+    CR["Carrier / 3PL"]:::ext
+
+    EMAIL <-->|"<b>◀ ra khỏi hệ thống</b><br/>• Activation invitation email<br/>• Purchase order email"| SYS
+    CU <-->|"<b>▶ vào hệ thống</b><br/>• Account activation & company profile<br/>• Design files & design decision<br/>• Quote decision<br/>• Sample feedback<br/>• Quick order & reorder<br/>• Cancellation & return request<br/><b>◀ ra khỏi hệ thống</b><br/>• Catalog, customer price & availability<br/>• Design & quote for confirmation<br/>• Order status & receivables"| SYS
+    SS <-->|"<b>▶ vào hệ thống</b><br/>• Manage customer profiles<br/>• Design files & confirmation request<br/>• Manage quotes<br/>• Sample request & sample record<br/>• Order decisions<br/>• Manage product drafts<br/><b>◀ ra khỏi hệ thống</b><br/>• Quote responses & cancellation requests<br/>• Confirmed designs & sample status"| SYS
+    OC <-->|"<b>▶ vào hệ thống</b><br/>• Fulfilment warehouse & order release<br/>• Order hold decision<br/>• Pick task assignment & reallocation<br/>• Delivery result & returned shipment<br/>• Order & return decisions<br/><b>◀ ra khỏi hệ thống</b><br/>• Orders awaiting release & on-hold orders"| SYS
+    EA <-->|"<b>▶ vào hệ thống</b><br/>• Manage categories & products<br/>• Catalog publishing & price lists<br/>• Manage customers & customer groups<br/>• Design brief & team assignment<br/>• Manage staff accounts & roles<br/><b>◀ ra khỏi hệ thống</b><br/>• Products pending approval<br/>• Sales dashboard"| SYS
+    AC <-->|"<b>▶ vào hệ thống</b><br/>• Incoming payments & COD remittance<br/>• Refund order<br/>• Credit decisions<br/><b>◀ ra khỏi hệ thống</b><br/>• Credit-hold orders & receivables<br/>• Sales dashboard"| SYS
+    BANK <-->|"<b>▶ vào hệ thống</b><br/>• Bank statement<br/><b>◀ ra khỏi hệ thống</b><br/>• Refund transfer"| SYS
+    QC <-->|"<b>▶ vào hệ thống</b><br/>• Inbound QC result<br/>• Design technical review<br/>• Production QC result<br/><b>◀ ra khỏi hệ thống</b><br/>• Items pending QC & design files"| SYS
+    SYS <-->|"<b>▶ vào hệ thống</b><br/>• Prepress result<br/>• Print output, scrap & hold<br/><b>◀ ra khỏi hệ thống</b><br/>• Production orders & print-ready files<br/>• Production dashboard"| PD
+    SYS <-->|"<b>▶ vào hệ thống</b><br/>• Supplier response<br/><b>◀ ra khỏi hệ thống</b><br/>• Purchase order & cancellation"| SUP
+    SYS <-->|"<b>▶ vào hệ thống</b><br/>• Manage suppliers & supplier catalog<br/>• Manage purchase orders<br/>• PO confirmation & supplier response<br/><b>◀ ra khỏi hệ thống</b><br/>• PO approval result & sending status<br/>• Purchasing reports"| PS
+    SYS <-->|"<b>▶ vào hệ thống</b><br/>• Manage accounts, roles & PO approval limits<br/>• Manage warehouse map & locations<br/>• Manage product master & lifecycle<br/>• Catalog publishing & price lists<br/>• PO approval decision<br/><b>◀ ra khỏi hệ thống</b><br/>• Change history & audit log"| SA
+    SYS <-->|"<b>▶ vào hệ thống</b><br/>• Transfer order<br/>• Cycle count plan<br/>• Manage inventory items & stock policy<br/>• Inventory adjustment request<br/><b>◀ ra khỏi hệ thống</b><br/>• Stock alerts<br/>• Stock levels & ATP"| IP
+    SYS <-->|"<b>▶ vào hệ thống</b><br/>• Approvals (PO, transfer, adjustment)<br/>• Manage warehouse map & locations<br/>• Manage carriers & vehicle types<br/>• Production order control<br/>• Design re-verification<br/>• Pick task, reallocation & returned shipment<br/><b>◀ ra khỏi hệ thống</b><br/>• Pending approvals & exception holds<br/>• Shipment load estimate"| WM
+    SYS <-->|"<b>▶ vào hệ thống</b><br/>• Goods receipt data<br/>• Putaway & stock move confirmation<br/>• Pick & pack confirmation<br/>• Handover, load plan & dispatch<br/>• Blank issue & subcontract shipment<br/>• Count result & adjustment request<br/><b>◀ ra khỏi hệ thống</b><br/>• Putaway, pick & count tasks<br/>• Package labels, manifest & load diagram"| WS
+    SYS <-->|"<b>▶ vào hệ thống</b><br/>• Finished goods & returned blanks<br/><b>◀ ra khỏi hệ thống</b><br/>• Subcontract order & print files"| SUB
+    SYS <-->|"<b>▶ vào hệ thống</b><br/>• Delivery result & COD remittance<br/>• Vehicle booking<br/><b>◀ ra khỏi hệ thống</b><br/>• Labels, manifest & loading diagram"| CR
