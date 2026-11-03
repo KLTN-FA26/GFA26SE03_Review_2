@@ -1,0 +1,374 @@
+erDiagram
+    carrier {
+        uuid id PK
+        varchar(32) code UK "NOT NULL"
+        varchar(120) name "NOT NULL"
+    }
+    shipment {
+        uuid id PK
+        uuid pack_id FK
+        uuid order_id FK "NOT NULL"
+        varchar(120) carrier
+        varchar(128) tracking_number
+        enum status "NOT NULL"
+        timestamptz dispatched_at
+        varchar(48) code UK "NOT NULL"
+        uuid request_id UK
+        enum delivery_mode "NOT NULL"
+        int package_count "NOT NULL"
+        decimal cod_amount "decimal(19,4), NOT NULL"
+        boolean partial "NOT NULL"
+        varchar(500) partial_note
+        timestamptz ready_at "NOT NULL"
+        uuid ready_by
+        timestamptz outcome_at
+        uuid outcome_by
+        varchar(24) failure_reason
+        varchar(500) failure_note
+        varchar(500) cancel_reason
+        uuid carrier_id FK
+        uuid load_id FK
+        boolean whole_order_handover "NOT NULL"
+        decimal label_cod_amount "decimal(19,4), NOT NULL"
+        timestamptz label_printed_at
+    }
+    wave {
+        uuid id PK
+        varchar(64) code UK "NOT NULL"
+        enum status "NOT NULL"
+        timestamptz released_at
+    }
+    shipment_event {
+        uuid id PK
+        uuid shipment_id FK "NOT NULL"
+        enum status "NOT NULL"
+        timestamptz occurred_at "NOT NULL"
+        enum source "NOT NULL"
+        varchar(128) carrier_event_id
+        varchar(255) location_text
+        varchar(1000) note
+        jsonb raw_payload
+        uuid recorded_by
+    }
+    pack {
+        uuid id PK
+        uuid pick_id FK, UK
+        enum status "NOT NULL"
+        timestamptz started_at
+        uuid started_by
+        uuid held_request_id
+        uuid transfer_order_id FK
+    }
+    dispatch_load {
+        uuid id PK
+        varchar(30) code UK "NOT NULL"
+        uuid request_id UK "NOT NULL"
+        uuid warehouse_id FK "NOT NULL"
+        enum mode "NOT NULL"
+        uuid carrier_id FK
+        uuid load_plan_vehicle_id FK
+        varchar(20) vehicle_plate
+        varchar(120) driver_name
+        varchar(32) driver_phone
+        enum status "NOT NULL"
+        varchar(120) carrier_representative
+        varchar(255) signature_ref
+        varchar(500) handover_note
+        int shipment_count "NOT NULL"
+        int package_count "NOT NULL"
+        decimal cod_total "decimal(19,4), NOT NULL"
+    }
+    pick {
+        uuid id PK
+        uuid wave_id FK
+        uuid order_id FK, UK "NOT NULL"
+        enum status "NOT NULL"
+        uuid assigned_user_id
+        timestamptz assigned_at
+        timestamptz started_at
+        timestamptz picked_at
+        boolean needs_put_back "NOT NULL"
+    }
+    pack_status_history {
+        uuid id PK
+        uuid pack_id FK "NOT NULL"
+        enum from_status
+        enum to_status "NOT NULL"
+        varchar(500) reason
+        timestamptz changed_at "NOT NULL"
+        uuid changed_by
+    }
+    load_plan {
+        uuid id PK
+        varchar(30) code UK "NOT NULL"
+        uuid request_id UK "NOT NULL"
+        uuid warehouse_id FK "NOT NULL"
+        enum source_type "NOT NULL"
+        enum selection_mode "NOT NULL"
+        enum status "NOT NULL"
+        varchar(500) note
+        timestamptz calculated_at
+        uuid calculated_by
+        jsonb solver_meta
+        timestamptz unplaced_acknowledged_at
+        uuid unplaced_acknowledged_by
+        varchar(500) unplaced_ack_note
+        timestamptz reopened_at
+        uuid reopened_by
+        varchar(500) reopen_reason
+        timestamptz revised_at "NOT NULL"
+    }
+    pick_line {
+        uuid id PK
+        uuid pick_id FK "NOT NULL"
+        uuid order_line_id FK "NOT NULL"
+        uuid reservation_id FK
+        varchar(64) location_code FK "NOT NULL"
+        int sequence_no "NOT NULL"
+        int allocated_qty "NOT NULL"
+        int picked_qty "NOT NULL"
+        int short_qty "NOT NULL"
+        enum status "NOT NULL"
+        uuid picked_by
+        timestamptz picked_at
+        timestamptz consumed_at
+        varchar(64) scanned_location_code
+        varchar(64) scanned_code
+        int put_back_qty "NOT NULL"
+        varchar(64) put_back_location_code FK
+        uuid put_back_by
+        timestamptz put_back_at
+        boolean whole_carton "NOT NULL"
+        int damaged_qty "NOT NULL"
+        uuid damage_report_id FK
+        int packing_damaged_qty "NOT NULL"
+    }
+    customer_order {
+        uuid id PK
+        varchar(32) order_number UK "NOT NULL"
+        uuid warehouse_id FK
+    }
+    package {
+        uuid id PK
+        uuid pack_id FK "NOT NULL"
+        uuid shipment_id FK
+        int package_no "NOT NULL"
+        decimal weight_kg "decimal(10,3)"
+        decimal length_cm "decimal(10,2)"
+        decimal width_cm "decimal(10,2)"
+        decimal height_cm "decimal(10,2)"
+        decimal dim_weight_kg "decimal(10,3)"
+        varchar(128) tracking_number
+        varchar(500) label_url
+        enum status "NOT NULL"
+        varchar(48) label_code UK "NOT NULL"
+        enum package_type "NOT NULL"
+        boolean rotatable "NOT NULL"
+        boolean rotatable_overridden "NOT NULL"
+        boolean fragile "NOT NULL"
+        boolean fragile_overridden "NOT NULL"
+        timestamptz label_outdated_at
+        uuid stock_package_id FK
+    }
+    dispatch_load_status_history {
+        uuid id PK
+        uuid dispatch_load_id FK "NOT NULL"
+        enum from_status
+        enum to_status "NOT NULL"
+        varchar(500) reason
+        timestamptz changed_at "NOT NULL"
+        uuid changed_by
+    }
+    transfer_order {
+        uuid id PK
+        varchar(30) transfer_number UK "NOT NULL"
+    }
+    transfer_order_line {
+        uuid id PK
+    }
+    dispatch_load_cancellation {
+        uuid load_id PK, FK
+        varchar(500) cancel_reason
+        varchar(20) cancel_reason_code
+    }
+    load_plan_status_history {
+        uuid id PK
+        uuid load_plan_id FK "NOT NULL"
+        enum from_status
+        enum to_status "NOT NULL"
+        varchar(500) reason
+        timestamptz changed_at "NOT NULL"
+        uuid changed_by
+    }
+    stock_reservation {
+        uuid id PK
+        varchar(64) sku FK "NOT NULL"
+    }
+    load_booking {
+        uuid load_id PK, FK
+        timestamptz booked_at
+        uuid booked_by
+        timestamptz booking_cancelled_at
+        uuid booking_cancelled_by
+        varchar(500) booking_cancel_reason
+    }
+    inventory_items {
+        uuid id PK
+        varchar(64) sku UK "NOT NULL"
+    }
+    load_plan_cancellation {
+        uuid load_plan_id PK, FK
+        varchar(500) cancel_reason
+        varchar(20) cancel_reason_code
+    }
+    warehouse {
+        uuid id PK
+        varchar(200) name "NOT NULL"
+    }
+    package_status_history {
+        uuid id PK
+        uuid package_id FK "NOT NULL"
+        enum from_status
+        enum to_status "NOT NULL"
+        varchar(500) reason
+        timestamptz changed_at "NOT NULL"
+        uuid changed_by
+    }
+    dispatch_load_package {
+        uuid id PK
+        uuid load_id FK "NOT NULL"
+        uuid package_id FK "NOT NULL"
+        uuid scan_id UK "NOT NULL"
+        timestamptz loaded_at "NOT NULL"
+        uuid loaded_by "NOT NULL"
+        boolean active "NOT NULL"
+        timestamptz removed_at
+        uuid removed_by
+    }
+    storage_location {
+        uuid id PK
+        varchar(64) location_code UK "NOT NULL"
+    }
+    load_plan_vehicle {
+        uuid id PK
+        uuid load_plan_id FK "NOT NULL"
+        int seq "NOT NULL"
+        boolean active "NOT NULL"
+        uuid vehicle_type_id FK "NOT NULL"
+        varchar(32) vehicle_code "NOT NULL"
+        enum vehicle_kind "NOT NULL"
+        int inner_length_mm "NOT NULL"
+        int inner_width_mm "NOT NULL"
+        int inner_height_mm "NOT NULL"
+        decimal max_payload_kg "decimal(10,3), NOT NULL"
+        int gusset_mm "NOT NULL"
+        int door_width_mm
+        int door_height_mm
+        bigint used_volume_mm3 "NOT NULL"
+        decimal used_weight_kg "decimal(12,3), NOT NULL"
+        decimal volume_fill_pct "decimal(7,2), NOT NULL"
+        decimal weight_fill_pct "decimal(7,2), NOT NULL"
+        boolean needs_recalculation "NOT NULL"
+    }
+    package_line {
+        uuid id PK
+        uuid package_id FK "NOT NULL"
+        uuid order_line_id FK
+        int quantity "NOT NULL"
+        uuid transfer_line_id FK
+    }
+    package_kit {
+        uuid package_id PK, FK
+        uuid kit_group_id
+        smallint kit_part_no
+        smallint kit_part_count
+        uuid kit_order_line_id FK
+        uuid kit_transfer_line_id FK
+        varchar(500) kit_override_reason
+    }
+    stock_damage_report {
+        uuid id PK
+        varchar(30) report_number UK "NOT NULL"
+    }
+    stock_package {
+        uuid id PK
+        varchar(30) lpn UK "NOT NULL"
+    }
+    order_line {
+        uuid id PK
+    }
+    vehicle_type {
+        uuid id PK
+        varchar(32) code UK "NOT NULL"
+        varchar(120) name "NOT NULL"
+    }
+    load_plan_package {
+        uuid id PK
+        uuid load_plan_id FK "NOT NULL"
+        uuid package_id FK "NOT NULL"
+        boolean active "NOT NULL"
+        enum unplaced_reason
+        timestamptz added_at "NOT NULL"
+        uuid added_by
+        timestamptz released_at
+        enum release_reason
+    }
+    load_placement {
+        uuid id PK
+        uuid load_plan_id FK "NOT NULL"
+        uuid load_plan_vehicle_id FK "NOT NULL"
+        uuid package_id FK "NOT NULL"
+        int x_mm "NOT NULL"
+        int y_mm "NOT NULL"
+        int z_mm "NOT NULL"
+        int w_mm "NOT NULL"
+        int h_mm "NOT NULL"
+        int d_mm "NOT NULL"
+        smallint orientation "NOT NULL"
+    }
+
+    carrier |o--o{ dispatch_load : "carrier_id"
+    carrier |o--o{ shipment : "carrier_id"
+    customer_order ||--o{ shipment : "order_id"
+    customer_order ||--o| pick : "order_id"
+    dispatch_load |o--o{ shipment : "load_id"
+    dispatch_load ||--o{ dispatch_load_package : "load_id"
+    dispatch_load ||--o{ dispatch_load_status_history : "dispatch_load_id"
+    dispatch_load ||--o| dispatch_load_cancellation : "load_id"
+    dispatch_load ||--o| load_booking : "load_id"
+    inventory_items ||--o{ stock_reservation : "sku"
+    load_plan ||--o{ load_plan_package : "load_plan_id"
+    load_plan ||--o{ load_plan_status_history : "load_plan_id"
+    load_plan ||--o{ load_plan_vehicle : "load_plan_id"
+    load_plan ||--o| load_plan_cancellation : "load_plan_id"
+    load_plan_package ||--o{ load_placement : "package_id"
+    load_plan_vehicle |o--o{ dispatch_load : "load_plan_vehicle_id"
+    load_plan_vehicle ||--o{ load_placement : "load_plan_vehicle_id"
+    order_line |o--o{ package_kit : "kit_order_line_id"
+    order_line |o--o{ package_line : "order_line_id"
+    order_line ||--o{ pick_line : "order_line_id"
+    pack |o--o{ shipment : "pack_id"
+    pack ||--o{ pack_status_history : "pack_id"
+    pack ||--o{ package : "pack_id"
+    package ||--o{ dispatch_load_package : "package_id"
+    package ||--o{ load_plan_package : "package_id"
+    package ||--o{ package_line : "package_id"
+    package ||--o{ package_status_history : "package_id"
+    package ||--o| package_kit : "package_id"
+    pick |o--o| pack : "pick_id"
+    pick ||--o{ pick_line : "pick_id"
+    shipment |o--o{ package : "shipment_id"
+    shipment ||--o{ shipment_event : "shipment_id"
+    stock_damage_report |o--o{ pick_line : "damage_report_id"
+    stock_package |o--o{ package : "stock_package_id"
+    stock_reservation |o--o{ pick_line : "reservation_id"
+    storage_location |o--o{ pick_line : "put_back_location_code"
+    storage_location ||--o{ pick_line : "location_code"
+    transfer_order |o--o{ pack : "transfer_order_id"
+    transfer_order_line |o--o{ package_kit : "kit_transfer_line_id"
+    transfer_order_line |o--o{ package_line : "transfer_line_id"
+    vehicle_type ||--o{ load_plan_vehicle : "vehicle_type_id"
+    warehouse |o--o{ customer_order : "warehouse_id"
+    warehouse ||--o{ dispatch_load : "warehouse_id"
+    warehouse ||--o{ load_plan : "warehouse_id"
+    wave |o--o{ pick : "wave_id"

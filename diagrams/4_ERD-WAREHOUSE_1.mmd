@@ -1,0 +1,337 @@
+erDiagram
+    warehouse {
+        uuid id PK
+        varchar(200) name "NOT NULL"
+        enum status "NOT NULL"
+        varchar(10) prefix UK "NOT NULL"
+        varchar(500) address "NOT NULL"
+        varchar(500) return_address
+        varchar(8) map_unit "NOT NULL"
+        decimal map_width "decimal(10,3), NOT NULL"
+        decimal map_height "decimal(10,3), NOT NULL"
+    }
+    transfer_order {
+        uuid id PK
+        varchar(30) transfer_number UK "NOT NULL"
+        uuid from_warehouse_id FK "NOT NULL"
+        uuid to_warehouse_id FK "NOT NULL"
+        enum status "NOT NULL"
+        enum reason
+        date expected_date
+        varchar(120) carrier
+        varchar(128) tracking_number
+        decimal shipping_cost "decimal(18,2)"
+        uuid submitted_by
+        timestamptz submitted_at
+        uuid approved_by
+        timestamptz approved_at
+        uuid dispatched_by
+        timestamptz dispatched_at
+        timestamptz received_at
+        timestamptz closed_at
+        varchar(500) close_reason
+        varchar(500) cancel_reason
+        enum delivery_mode "NOT NULL"
+        timestamptz packed_at
+        timestamptz goods_left_at
+        uuid rejected_by
+        timestamptz rejected_at
+        varchar(500) rejection_reason
+    }
+    bin {
+        uuid id PK
+        uuid level_id FK "NOT NULL"
+        uuid location_id FK, UK "NOT NULL"
+        varchar(20) code "NOT NULL"
+        varchar(1000) description
+        decimal x "decimal(10,3), NOT NULL"
+        decimal y "decimal(10,3), NOT NULL"
+        decimal width "decimal(10,3), NOT NULL"
+        decimal length "decimal(10,3), NOT NULL"
+        int rotation "NOT NULL"
+        enum type "NOT NULL"
+        enum storage_class_override
+    }
+    cycle_count {
+        uuid id PK
+        varchar(30) count_number UK "NOT NULL"
+        uuid warehouse_id FK "NOT NULL"
+        enum trigger_type "NOT NULL"
+        enum status "NOT NULL"
+        boolean is_blind "NOT NULL"
+        uuid assigned_user_id
+        date planned_date
+        timestamptz started_at
+        timestamptz completed_at
+        varchar(1000) note
+    }
+    shelf_level {
+        uuid id PK
+        uuid shelf_id FK "NOT NULL"
+        int level_index "NOT NULL"
+        decimal elevation "decimal(10,3)"
+        decimal usable_height "decimal(10,3)"
+        decimal max_weight "decimal(10,3)"
+    }
+    cycle_count_line {
+        uuid id PK
+        uuid cycle_count_id FK "NOT NULL"
+        varchar(64) location_code FK "NOT NULL"
+        varchar(64) sku FK "NOT NULL"
+        varchar(64) lot_number
+        int expected_qty "NOT NULL"
+        int counted_qty
+        uuid counted_by
+        timestamptz counted_at
+        boolean recount_required "NOT NULL"
+        uuid stock_package_id FK
+    }
+    storage_location {
+        uuid id PK
+        uuid warehouse_id FK "NOT NULL"
+        enum kind "NOT NULL"
+        varchar(64) location_code UK "NOT NULL"
+        enum storage_class "NOT NULL"
+        int capacity_units
+        decimal max_weight "decimal(10,3)"
+        boolean is_pickable "NOT NULL"
+        boolean is_putaway_target "NOT NULL"
+        enum status "NOT NULL"
+    }
+    purchase_orders {
+        uuid id PK
+        varchar(30) po_number UK "NOT NULL"
+        uuid supplier_id FK "NOT NULL"
+    }
+    stock_movement {
+        uuid id PK
+        enum movement_type "NOT NULL"
+        varchar(64) sku FK "NOT NULL"
+        varchar(64) from_location_code FK
+        varchar(64) to_location_code FK
+        int quantity "NOT NULL"
+        varchar(32) from_status
+        varchar(32) to_status
+        enum reference_type "NOT NULL"
+        uuid reference_id "NOT NULL"
+        varchar(500) reason
+        uuid actor_id
+        timestamptz occurred_at "NOT NULL"
+        uuid from_stock_package_id FK
+        uuid to_stock_package_id FK
+        uuid lot_id FK
+        uuid order_id FK
+    }
+    goods_receipts {
+        uuid id PK
+        varchar(30) receipt_number UK "NOT NULL"
+        uuid po_revision_id FK
+        uuid warehouse_id FK "NOT NULL"
+        uuid supplier_id FK
+    }
+    stock_adjustment {
+        uuid id PK
+        varchar(30) adjustment_number UK "NOT NULL"
+        varchar(64) location_code FK "NOT NULL"
+        varchar(64) sku FK "NOT NULL"
+        varchar(64) lot_number
+        int quantity_delta "NOT NULL"
+        enum reason_code "NOT NULL"
+        varchar(1000) note
+        enum status "NOT NULL"
+        uuid cycle_count_line_id FK
+        uuid requested_by "NOT NULL"
+        uuid decided_by
+        timestamptz decided_at
+        varchar(500) rejection_reason
+        timestamptz posted_at
+        timestamptz withdrawn_at
+        timestamptz received_at
+        uuid reservation_id FK
+    }
+    purchase_order_revisions {
+        uuid id PK
+        uuid po_id FK "NOT NULL"
+    }
+    stock_package {
+        uuid id PK
+        varchar(30) lpn UK "NOT NULL"
+        uuid inventory_item_id FK "NOT NULL"
+        uuid uom_conversion_id FK "NOT NULL"
+        int nominal_qty "NOT NULL"
+        int received_qty
+        varchar(64) location_code FK "NOT NULL"
+        enum status "NOT NULL"
+        boolean unopened "NOT NULL"
+        uuid goods_receipt_line_id FK
+        timestamptz closed_at
+    }
+    shelf {
+        uuid id PK
+        uuid warehouse_id FK "NOT NULL"
+        uuid zone_id FK
+        varchar(20) code "NOT NULL"
+        varchar(200) name "NOT NULL"
+        varchar(1000) description
+        decimal x "decimal(10,3), NOT NULL"
+        decimal y "decimal(10,3), NOT NULL"
+        decimal width "decimal(10,3), NOT NULL"
+        decimal length "decimal(10,3), NOT NULL"
+        int rotation "NOT NULL"
+        boolean is_obstacle "NOT NULL"
+        boolean pick_north "NOT NULL"
+        boolean pick_east "NOT NULL"
+        boolean pick_south "NOT NULL"
+        boolean pick_west "NOT NULL"
+        enum default_storage_class "NOT NULL"
+        enum status "NOT NULL"
+    }
+    suppliers {
+        uuid id PK
+        varchar(30) code UK "NOT NULL"
+        varchar(200) name "NOT NULL"
+    }
+    customer_order {
+        uuid id PK
+        varchar(32) order_number UK "NOT NULL"
+    }
+    goods_receipt_lines {
+        uuid id PK
+        uuid receipt_id FK "NOT NULL"
+    }
+    transfer_order_line {
+        uuid id PK
+        uuid transfer_order_id FK "NOT NULL"
+        int line_no "NOT NULL"
+        varchar(64) sku FK "NOT NULL"
+        varchar(64) lot_number
+        int requested_qty "NOT NULL"
+        int shipped_qty "NOT NULL"
+        int received_qty "NOT NULL"
+        int damaged_qty "NOT NULL"
+        uuid received_by
+        varchar(1000) discrepancy_note
+    }
+    stock_reservation {
+        uuid id PK
+        uuid stock_item_id FK
+        uuid order_id FK
+        uuid root_request_id "NOT NULL"
+        uuid request_id UK "NOT NULL"
+        int quantity "NOT NULL"
+        timestamptz reserved_at "NOT NULL"
+        timestamptz expires_at
+        enum status "NOT NULL"
+        varchar(32) release_reason
+        timestamptz closed_at
+        uuid production_order_id FK
+        varchar(64) sku FK "NOT NULL"
+        uuid allocated_from_id FK
+        uuid transfer_order_id FK
+    }
+    putaway_task {
+        uuid id PK
+        varchar(64) sku FK "NOT NULL"
+        int quantity "NOT NULL"
+        uuid target_location_id FK
+        enum status "NOT NULL"
+        uuid goods_receipt_line_id FK
+        uuid transfer_order_line_id FK
+        uuid return_request_line_id FK
+        uuid stock_package_id FK
+    }
+    uom_conversions {
+        uuid id PK
+    }
+    stock_item {
+        uuid id PK
+        varchar(64) location_code FK "NOT NULL"
+        int on_hand "NOT NULL"
+        int reserved "NOT NULL"
+        enum status "NOT NULL"
+        timestamptz received_at
+        varchar(100) serial_number
+        uuid stock_package_id FK
+        uuid lot_id FK
+    }
+    stock_lot {
+        uuid id PK
+        varchar(64) sku FK "NOT NULL"
+        varchar(64) lot_number
+        date expiry_date
+        timestamptz received_at
+        enum origin_type "NOT NULL"
+        uuid goods_receipt_id FK
+    }
+    zone {
+        uuid id PK
+        uuid warehouse_id FK "NOT NULL"
+        varchar(100) name "NOT NULL"
+        varchar(7) color
+    }
+    production_order {
+        uuid id PK
+        varchar(30) order_number UK "NOT NULL"
+    }
+    return_request_line {
+        uuid id PK
+    }
+    inventory_items {
+        uuid id PK
+        varchar(64) sku UK "NOT NULL"
+    }
+
+    customer_order |o--o{ stock_movement : "order_id"
+    customer_order |o--o{ stock_reservation : "order_id"
+    cycle_count ||--o{ cycle_count_line : "cycle_count_id"
+    cycle_count_line |o--o{ stock_adjustment : "cycle_count_line_id"
+    goods_receipt_lines |o--o{ putaway_task : "goods_receipt_line_id"
+    goods_receipt_lines |o--o{ stock_package : "goods_receipt_line_id"
+    goods_receipts |o--o{ stock_lot : "goods_receipt_id"
+    goods_receipts ||--o{ goods_receipt_lines : "receipt_id"
+    inventory_items ||--o{ cycle_count_line : "sku"
+    inventory_items ||--o{ putaway_task : "sku"
+    inventory_items ||--o{ stock_adjustment : "sku"
+    inventory_items ||--o{ stock_lot : "sku"
+    inventory_items ||--o{ stock_movement : "sku"
+    inventory_items ||--o{ stock_package : "inventory_item_id"
+    inventory_items ||--o{ stock_reservation : "sku"
+    inventory_items ||--o{ transfer_order_line : "sku"
+    production_order |o--o{ stock_reservation : "production_order_id"
+    purchase_order_revisions |o--o{ goods_receipts : "po_revision_id"
+    purchase_orders ||--o{ purchase_order_revisions : "po_id"
+    return_request_line |o--o{ putaway_task : "return_request_line_id"
+    shelf ||--o{ shelf_level : "shelf_id"
+    shelf_level ||--o{ bin : "level_id"
+    stock_item |o--o{ stock_reservation : "stock_item_id"
+    stock_lot |o--o{ stock_item : "lot_id"
+    stock_lot |o--o{ stock_movement : "lot_id"
+    stock_package |o--o{ cycle_count_line : "stock_package_id"
+    stock_package |o--o{ putaway_task : "stock_package_id"
+    stock_package |o--o{ stock_item : "stock_package_id"
+    stock_package |o--o{ stock_movement : "from_stock_package_id"
+    stock_package |o--o{ stock_movement : "to_stock_package_id"
+    stock_reservation |o--o{ stock_adjustment : "reservation_id"
+    stock_reservation |o--o{ stock_reservation : "allocated_from_id"
+    storage_location |o--o{ putaway_task : "target_location_id"
+    storage_location |o--o{ stock_movement : "from_location_code"
+    storage_location |o--o{ stock_movement : "to_location_code"
+    storage_location ||--o{ cycle_count_line : "location_code"
+    storage_location ||--o{ stock_adjustment : "location_code"
+    storage_location ||--o{ stock_item : "location_code"
+    storage_location ||--o{ stock_package : "location_code"
+    storage_location ||--o| bin : "location_id"
+    suppliers |o--o{ goods_receipts : "supplier_id"
+    suppliers ||--o{ purchase_orders : "supplier_id"
+    transfer_order |o--o{ stock_reservation : "transfer_order_id"
+    transfer_order ||--o{ transfer_order_line : "transfer_order_id"
+    transfer_order_line |o--o{ putaway_task : "transfer_order_line_id"
+    uom_conversions ||--o{ stock_package : "uom_conversion_id"
+    warehouse ||--o{ cycle_count : "warehouse_id"
+    warehouse ||--o{ goods_receipts : "warehouse_id"
+    warehouse ||--o{ shelf : "warehouse_id"
+    warehouse ||--o{ storage_location : "warehouse_id"
+    warehouse ||--o{ transfer_order : "from_warehouse_id"
+    warehouse ||--o{ transfer_order : "to_warehouse_id"
+    warehouse ||--o{ zone : "warehouse_id"
+    zone |o--o{ shelf : "zone_id"

@@ -1,0 +1,263 @@
+erDiagram
+    production_qc_result {
+        uuid id PK
+        uuid production_order_id FK "NOT NULL"
+        int round_no "NOT NULL"
+        int passed_quantity "NOT NULL"
+        int failed_quantity "NOT NULL"
+        varchar(1000) note
+        timestamptz inspected_at "NOT NULL"
+        uuid inspected_by "NOT NULL"
+    }
+    production_subcontract_terms {
+        uuid production_order_id PK, FK
+        varchar(20) subcontract_method
+        decimal subcontract_unit_price "decimal(19,4)"
+        varchar(3) subcontract_currency
+    }
+    purchase_orders {
+        uuid id PK
+        varchar(30) po_number UK "NOT NULL"
+        uuid supplier_id FK "NOT NULL"
+        uuid production_order_id FK
+    }
+    production_material_issue {
+        uuid id PK
+        uuid production_order_id FK "NOT NULL"
+        uuid request_id UK "NOT NULL"
+        uuid reservation_id FK, UK "NOT NULL"
+        varchar(64) from_location "NOT NULL"
+        varchar(64) to_location "NOT NULL"
+        int quantity "NOT NULL"
+        uuid stock_movement_id FK
+        timestamptz issued_at "NOT NULL"
+        uuid issued_by "NOT NULL"
+    }
+    production_order_status_history {
+        uuid id PK
+        uuid production_order_id FK "NOT NULL"
+        varchar(32) from_status
+        varchar(32) to_status "NOT NULL"
+        varchar(1000) reason
+        timestamptz changed_at "NOT NULL"
+        uuid changed_by
+    }
+    sample_request {
+        uuid id PK
+        varchar(30) request_number UK "NOT NULL"
+        uuid customer_id FK "NOT NULL"
+        uuid quote_id FK
+        uuid previous_round_id FK
+        int round_no "NOT NULL"
+        varchar(64) blank_sku FK "NOT NULL"
+        uuid design_snapshot_id FK "NOT NULL"
+        int quantity "NOT NULL"
+        date due_date
+        enum status "NOT NULL"
+        timestamptz sent_at
+        timestamptz responded_at
+        uuid responded_by
+        varchar(2000) customer_feedback
+        varchar(500) cancellation_reason
+    }
+    purchase_order_revisions {
+        uuid id PK
+        uuid po_id FK "NOT NULL"
+    }
+    stock_reservation {
+        uuid id PK
+    }
+    customer {
+        uuid id PK
+        varchar(200) full_name "NOT NULL"
+    }
+    stock_movement {
+        uuid id PK
+    }
+    goods_receipts {
+        uuid id PK
+        varchar(30) receipt_number UK "NOT NULL"
+        uuid po_revision_id FK
+    }
+    production_print_run {
+        uuid id PK
+        uuid production_order_id FK "NOT NULL"
+        int printed_quantity "NOT NULL"
+        int scrap_quantity "NOT NULL"
+        timestamptz recorded_at "NOT NULL"
+        uuid recorded_by
+    }
+    quote {
+        uuid id PK
+        varchar(30) quote_number UK "NOT NULL"
+    }
+    production_order {
+        uuid id PK
+        varchar(30) order_number UK "NOT NULL"
+        enum type "NOT NULL"
+        enum mode "NOT NULL"
+        enum status "NOT NULL"
+        uuid sample_request_id FK
+        uuid sales_order_line_id FK
+        uuid parent_id FK
+        uuid approved_sample_id FK
+        uuid warehouse_id FK "NOT NULL"
+        varchar(64) blank_sku FK "NOT NULL"
+        varchar(128) design_checksum "NOT NULL"
+        date due_date
+        int planned_quantity "NOT NULL"
+        int issued_quantity "NOT NULL"
+        int printed_quantity "NOT NULL"
+        int good_quantity "NOT NULL"
+        int scrap_quantity "NOT NULL"
+        uuid purchase_order_id FK
+        uuid prepress_checked_by
+        timestamptz prepress_checked_at
+        varchar(500) cancellation_reason
+        varchar(16) origin
+        varchar(64) packing_location_code FK
+        varchar(500) short_completion_reason
+    }
+    stock_adjustment {
+        uuid id PK
+        varchar(30) adjustment_number UK "NOT NULL"
+    }
+    suppliers {
+        uuid id PK
+        varchar(30) code UK "NOT NULL"
+        varchar(200) name "NOT NULL"
+    }
+    design_snapshot {
+        uuid id PK
+    }
+    production_subcontract_hold {
+        uuid reservation_id PK, FK
+        uuid receipt_id FK "NOT NULL"
+        uuid receipt_line_id UK "NOT NULL"
+    }
+    production_scrap {
+        uuid id PK
+        uuid production_order_id FK "NOT NULL"
+        int quantity "NOT NULL"
+        enum reason "NOT NULL"
+        varchar(1000) note
+        uuid stock_adjustment_id FK
+        timestamptz recorded_at "NOT NULL"
+        uuid recorded_by "NOT NULL"
+    }
+    approved_sample {
+        uuid sample_request_id PK, FK
+        timestamptz approved_at "NOT NULL"
+    }
+    customer_order {
+        uuid id PK
+        varchar(32) order_number UK "NOT NULL"
+    }
+    subcontract_settlement {
+        uuid po_id PK, FK
+        enum status "NOT NULL"
+        varchar(3) currency "NOT NULL"
+        decimal unit_price "decimal(18,2), NOT NULL"
+        int received_quantity "NOT NULL"
+        int passed_quantity "NOT NULL"
+        int failed_quantity "NOT NULL"
+        int blanks_sent "NOT NULL"
+        int blanks_used "NOT NULL"
+        int blanks_returned "NOT NULL"
+        int blanks_lost "NOT NULL"
+        decimal tolerance_percent "decimal(5,2), NOT NULL"
+        decimal deduction_per_blank "decimal(18,2)"
+        decimal cancellation_fee "decimal(18,2), NOT NULL"
+        varchar(1000) cancellation_fee_reason
+        timestamptz settled_at "NOT NULL"
+        uuid settled_by
+        timestamptz approved_at
+        uuid approved_by
+        varchar(1000) approval_note
+    }
+    production_subcontract_receipt {
+        uuid receipt_id PK, FK
+        int quantity "NOT NULL"
+        timestamptz received_at "NOT NULL"
+        int used_blanks
+        int spoilt_blanks
+        int returned_blanks
+        timestamptz reconciled_at
+        uuid reconciled_by
+    }
+    inventory_items {
+        uuid id PK
+        varchar(64) sku UK "NOT NULL"
+    }
+    order_line {
+        uuid id PK
+        uuid order_id FK "NOT NULL"
+        uuid design_snapshot_id FK
+    }
+    production_subcontract_recall {
+        uuid id PK
+        uuid production_order_id FK "NOT NULL"
+        uuid request_id UK "NOT NULL"
+        int returned_blanks "NOT NULL"
+        int spoilt_blanks "NOT NULL"
+        varchar(64) return_location
+        varchar(1000) note
+        timestamptz recorded_at "NOT NULL"
+        uuid recorded_by "NOT NULL"
+    }
+    order_line_production {
+        uuid production_order_id PK, FK
+        int good_quantity "NOT NULL"
+        timestamptz completed_at "NOT NULL"
+    }
+    production_order_hold {
+        uuid production_order_id PK, FK
+        enum status_before_hold
+        enum hold_reason
+        varchar(1000) hold_note
+    }
+    warehouse {
+        uuid id PK
+        varchar(200) name "NOT NULL"
+    }
+    storage_location {
+        uuid id PK
+        varchar(64) location_code UK "NOT NULL"
+    }
+
+    customer ||--o{ sample_request : "customer_id"
+    customer_order ||--o{ order_line : "order_id"
+    design_snapshot |o--o{ order_line : "design_snapshot_id"
+    design_snapshot ||--o{ sample_request : "design_snapshot_id"
+    goods_receipts ||--o| production_subcontract_receipt : "receipt_id"
+    inventory_items ||--o{ production_order : "blank_sku"
+    inventory_items ||--o{ sample_request : "blank_sku"
+    order_line |o--o{ production_order : "sales_order_line_id"
+    production_order |o--o{ production_order : "parent_id"
+    production_order |o--o{ purchase_orders : "production_order_id"
+    production_order ||--o{ production_material_issue : "production_order_id"
+    production_order ||--o{ production_order_status_history : "production_order_id"
+    production_order ||--o{ production_print_run : "production_order_id"
+    production_order ||--o{ production_qc_result : "production_order_id"
+    production_order ||--o{ production_scrap : "production_order_id"
+    production_order ||--o{ production_subcontract_recall : "production_order_id"
+    production_order ||--o| order_line_production : "production_order_id"
+    production_order ||--o| production_order_hold : "production_order_id"
+    production_order ||--o| production_subcontract_terms : "production_order_id"
+    production_subcontract_receipt ||--o{ production_subcontract_hold : "receipt_id"
+    purchase_order_revisions |o--o{ goods_receipts : "po_revision_id"
+    purchase_orders |o--o{ production_order : "purchase_order_id"
+    purchase_orders ||--o{ purchase_order_revisions : "po_id"
+    purchase_orders ||--o| subcontract_settlement : "po_id"
+    quote |o--o{ sample_request : "quote_id"
+    sample_request |o--o{ production_order : "approved_sample_id"
+    sample_request |o--o{ production_order : "sample_request_id"
+    sample_request |o--o{ sample_request : "previous_round_id"
+    sample_request ||--o| approved_sample : "sample_request_id"
+    stock_adjustment |o--o{ production_scrap : "stock_adjustment_id"
+    stock_movement |o--o{ production_material_issue : "stock_movement_id"
+    stock_reservation ||--o| production_material_issue : "reservation_id"
+    stock_reservation ||--o| production_subcontract_hold : "reservation_id"
+    storage_location |o--o{ production_order : "packing_location_code"
+    suppliers ||--o{ purchase_orders : "supplier_id"
+    warehouse ||--o{ production_order : "warehouse_id"
